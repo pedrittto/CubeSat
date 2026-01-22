@@ -17,48 +17,45 @@ const int CZAS_DELAY=2000;
 const int CZAS_YELLOW=1000;
 const int CZAS_GREEN=2000;
 
-void setup(){
-  Serial.begin(115200);
-  digitalWrite(PIN_RED,LOW);
-  digitalWrite(PIN_YELLOW,LOW);
-  digitalWrite(PIN_GREEN,HIGH);
-
-  pinMode(PIN_RED, OUTPUT);
-  pinMode(PIN_YELLOW, OUTPUT);
-  pinMode(PIN_GREEN, OUTPUT);
-  pinMode(PIN_BTN, INPUT_PULLUP);
+void setLights(int R, int Y, int G){
+  digitalWrite(PIN_RED,R);
+  digitalWrite(PIN_YELLOW,Y);
+  digitalWrite(PIN_GREEN,G);
 }
 
-void loop(){
-  unsigned long aktualnyCzas=millis();
-
-  if (Serial.available()>0){
+void handleSerialInput(){
+  if(Serial.available()>0){
     char command=Serial.read();
+    unsigned long aktualnyCzas=millis();
+
     if (command=='R'){
       aktualnyStan=STAN_RED;
       czasOstatniejZmiany=aktualnyCzas;
       digitalWrite(PIN_RED,HIGH);
       digitalWrite(PIN_YELLOW,LOW);
       digitalWrite(PIN_GREEN,LOW);
-  }
-  else if (command=='G'){
+    }
+    else if (command=='G'){
       aktualnyStan=STAN_OFF;
       czasOstatniejZmiany=aktualnyCzas;
       digitalWrite(PIN_RED,LOW);
       digitalWrite(PIN_YELLOW,LOW);
       digitalWrite(PIN_GREEN,HIGH);
-  }
-  else if (command=='Y'){
-    aktualnyStan=STAN_YELLOW;
-    czasOstatniejZmiany=aktualnyCzas;
-    digitalWrite(PIN_RED,LOW);
-    digitalWrite (PIN_YELLOW,HIGH);
-    digitalWrite(PIN_GREEN,LOW);
-    
+    }
+    else if (command=='Y'){
+      aktualnyStan=STAN_YELLOW;
+      czasOstatniejZmiany=aktualnyCzas;
+      digitalWrite(PIN_RED,LOW);
+      digitalWrite (PIN_YELLOW,HIGH);
+      digitalWrite(PIN_GREEN,LOW);
+    }
   }
 }
 
-switch (aktualnyStan) {
+void updateTrafficLightsState(){
+  unsigned long aktualnyCzas=millis();
+
+  switch (aktualnyStan) {
     case STAN_OFF:
       if (digitalRead(PIN_BTN) == LOW) {
         aktualnyStan = STAN_PREPARING;
@@ -108,4 +105,21 @@ switch (aktualnyStan) {
       }
       break;
   }
+}
+
+void setup(){
+  Serial.begin(115200);
+  digitalWrite(PIN_RED,LOW);
+  digitalWrite(PIN_YELLOW,LOW);
+  digitalWrite(PIN_GREEN,HIGH);
+
+  pinMode(PIN_RED, OUTPUT);
+  pinMode(PIN_YELLOW, OUTPUT);
+  pinMode(PIN_GREEN, OUTPUT);
+  pinMode(PIN_BTN, INPUT_PULLUP);
+}
+
+void loop(){
+  handleSerialInput();
+  updateTrafficLightsState();
 }
