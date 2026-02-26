@@ -1,60 +1,79 @@
-#include <Arduino.h>
+#include <Wire.h>
 
-const int PIN_BATTERY_SENSOR = 34;
-const float MAX_VOLTAGE = 3.3;
-const float LOW_BATTERY_VOLTAGE = 3.0;
-const float BAT_MIN_VOLTAGE = 3.0;
-const float BAT_MAX_VOLTAGE = 3.3;
-const int ADC_RESOLUTION = 4095;
-const int SAMPLES_COUNT = 10;
-const int TIME_TO_SLEEP = 10;
+enum class SystemState {
+    INITIALIZING,
+    MEASURING,    // Pomiar prądów/napięć przez INA3221
+    TELEMETRY,    // Wysyłka danych przez Wi-Fi
+    SAFE_MODE,    // Ochrona baterii 
+    GOTO_SLEEP    // Przygotowanie do Deep Sleep
+};
 
-float currentVoltage = 0.0;
+class DeskSatEPS {
+private:
+    SystemState currentState;
+    unsigned long lastMeasureTime;
+    const unsigned long measureInterval = 5000; /
 
-float readBatteryVoltage() {
-  long rawSum = 0;
-  for (int i = 0; i < SAMPLES_COUNT; i++) {
-    rawSum += analogRead(PIN_BATTERY_SENSOR);
-    delay(2);
-  }
-  float rawAvg = rawSum / float(SAMPLES_COUNT);
-  return (rawAvg / ADC_RESOLUTION) * MAX_VOLTAGE;
-}
+public:
+    DeskSatEPS() : currentState(SystemState::INITIALIZING), lastMeasureTime(0) {}
 
-int calculatePercentage(float voltage) {
-  float percentage = (voltage - BAT_MIN_VOLTAGE) / (BAT_MAX_VOLTAGE - BAT_MIN_VOLTAGE) * 100;
-  if (percentage > 100) percentage = 100;
-  if (percentage < 0) percentage = 0;
-  return (int)percentage;
-}
+    void begin() {
+        Serial.begin(115200);
+        Wire.begin(); 
+        currentState = SystemState::MEASURING;
+    }
 
-void checkBatteryStatus() {
-  currentVoltage = readBatteryVoltage();
-  int batteryLevel = calculatePercentage(currentVoltage);
+    void run() {
+        switch (currentState) {
+            case SystemState::MEASURING:
+                if (millis() - lastMeasureTime >= measureInterval) {
+                    performMeasurement();
+                    lastMeasureTime = millis();
+                }
+                break;
 
-  Serial.print("BATT: ");
-  Serial.print(currentVoltage);
-  Serial.print(" V [");
-  Serial.print(batteryLevel);
-  Serial.println(" %]");
+            case SystemState::TELEMETRY:
+                sendData();
+                break;
 
-  if (currentVoltage <= LOW_BATTERY_VOLTAGE) {
-    Serial.println(">>> CRITICAL BATTERY LEVEL! <<<");
-    Serial.println("System cutoff. Simulating Deep Sleep (10s)...");
-    
-    delay(TIME_TO_SLEEP * 1000); 
-    
-    Serial.println("\n--- Waking up. Resuming monitoring ---");
-  }
-}
+            case SystemState::SAFE_MODE:
+                handleSafety();
+                break;
 
-void setup() {
-  Serial.begin(115200);
-  pinMode(PIN_BATTERY_SENSOR, INPUT);
-  Serial.println("\n--- BMS started. Monitoring active ---");
-}
+            case SystemState::GOTO_SLEEP:
+                enterDeepSleep();
+                break;
+        }
+    }
 
-void loop() {
-  checkBatteryStatus();
-  delay(500);
-}
+private:
+    void performMeasurement() {
+        float busVoltage = 3.8; 
+        
+        if (busVoltage < 3.2) { 
+            currentState = SystemState::SAFE_MODE;
+        } else {
+            currentState = SystemState::TELEMETRY;
+        }
+    }
+
+    void sendData() {
+        currentState = SystemState::GOTO_SLEEP;
+    }
+
+    void handleSafety() {
+        Serial.println("CRITICAL: Battery Low!");
+        currentState = SystemState::GOTO_SLEEP;
+    }
+
+    void enterDeepSleep() {
+        Serial.println("Entering Deep Sleep (10uA target)...");
+        esp_sleep_enable_timer_wakeup(60 * 1000000); 
+        esp_deep_sleep_start(); 
+    }
+};
+
+DeskSatEPS eps;
+
+void setup() { eps.begin(); }
+void loop() { eps.run(); } 
