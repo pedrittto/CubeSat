@@ -1,79 +1,110 @@
+#include <Arduino.h>
 #include <Wire.h>
 
-enum class SystemState {
-    INITIALIZING,
-    MEASURING,    // Pomiar prądów/napięć przez INA3221
-    TELEMETRY,    // Wysyłka danych przez Wi-Fi
-    SAFE_MODE,    // Ochrona baterii 
-    GOTO_SLEEP    // Przygotowanie do Deep Sleep
+class IVoltageSensor{
+  public:
+    virtual float getVoltage()=0;
+    virtual ~IVoltageSensor()=default;
 };
 
-class DeskSatEPS {
-private:
+class MockSensor: public IVoltageSensor{
+  private:
+    float testVoltages[3]={4.1,3.8,3.1};
+    int index=0;
+  public:
+    float getVoltage() override{
+      float v=testVoltages[index];
+      index=(index+1)%3;
+      return v;
+    }
+};
+
+enum class SystemState{
+  INITIALIZING,
+  MEASURING,
+  TELEMETRY,
+  SAFE_MODE,
+  GOTO_SLEEP,
+};
+
+class PowerSystem{
+  private:
     SystemState currentState;
-    unsigned long lastMeasureTime;
-    const unsigned long measureInterval = 5000; /
+    IVoltageSensor*sensor;
+  public:
+    PowerSystem(IVoltageSensor*s):currentState(SystemState::MEASURING),sensor(s){}
 
-public:
-    DeskSatEPS() : currentState(SystemState::INITIALIZING), lastMeasureTime(0) {}
-
-    void begin() {
-        Serial.begin(115200);
-        Wire.begin(); 
-        currentState = SystemState::MEASURING;
+    void begin(){
+      Serial.begin(115200);
+      Wire.begin();
+      Serial.println("Power System Initialized");
+      currentState=SystemState::MEASURING;
     }
 
-    void run() {
-        switch (currentState) {
-            case SystemState::MEASURING:
-                if (millis() - lastMeasureTime >= measureInterval) {
-                    performMeasurement();
-                    lastMeasureTime = millis();
-                }
-                break;
+  void run(){
+    switch (currentState){
+      case SystemState::INITIALIZING:
+        break;
 
-            case SystemState::TELEMETRY:
-                sendData();
-                break;
+      case SystemState::MEASURING:
+        performMeasure();
+        break;
+      
+      case SystemState::TELEMETRY:
+        sendData();
+        break;
+      
+      case SystemState::SAFE_MODE:
+        enterSafeMode();
+        break;
 
-            case SystemState::SAFE_MODE:
-                handleSafety();
-                break;
-
-            case SystemState::GOTO_SLEEP:
-                enterDeepSleep();
-                break;
-        }
-    }
+      case SystemState::GOTO_SLEEP:
+        enterDeepSleep();
+        break;
+    }  
+  }
 
 private:
-    void performMeasurement() {
-        float busVoltage = 3.8; 
-        
-        if (busVoltage < 3.2) { 
-            currentState = SystemState::SAFE_MODE;
-        } else {
-            currentState = SystemState::TELEMETRY;
-        }
-    }
+  void performMeasure(){
+    float voltage=sensor->getVoltage();
+    Serial.print("voltage: ");
+    Serial.print(voltage);
+    Serial.println(" V");
 
-    void sendData() {
-        currentState = SystemState::GOTO_SLEEP;
+    if (voltage < 3.3){
+      currentState=SystemState::SAFE_MODE;
+    }else{
+      currentState=SystemState::TELEMETRY;
     }
+  }
 
-    void handleSafety() {
-        Serial.println("CRITICAL: Battery Low!");
-        currentState = SystemState::GOTO_SLEEP;
-    }
+  void sendData(){
+    Serial.println("Sending telemetry data...");
+    currentState=SystemState::GOTO_SLEEP;
+  }
 
-    void enterDeepSleep() {
-        Serial.println("Entering Deep Sleep (10uA target)...");
-        esp_sleep_enable_timer_wakeup(60 * 1000000); 
-        esp_deep_sleep_start(); 
-    }
+  void enterSafeMode(){
+    Serial.println("Low battery-entering safe mode");
+    currentState=SystemState::GOTO_SLEEP;
+  }
+
+  void enterDeepSleep(){
+    Serial.println("Entering deep sleep");
+    Serial.flush();
+    esp_sleep_enable_timer_wakeup(5*1000000);
+    esp_deep_sleep_start();
+  }
 };
 
-DeskSatEPS eps;
+MockSensor dummySensor;
 
-void setup() { eps.begin(); }
-void loop() { eps.run(); } 
+PowerSystem eps(&dummySensor);
+
+void setup(){
+  eps.begin();
+}
+
+void loop (){
+  eps.run();
+  delay(50);
+}
