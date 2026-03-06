@@ -7,9 +7,9 @@ class IVoltageSensor{
     virtual ~IVoltageSensor()=default;
 };
 
-class MockSensor: public IVoltageSensor{
+class MockSensor:public IVoltageSensor{
   private:
-    float testVoltages[3]={4.1,3.8,3.1};
+    float testVoltages[5]={4.1,3.8,3.1};
     int index=0;
   public:
     float getVoltage() override{
@@ -37,74 +37,66 @@ class PowerSystem{
     void begin(){
       Serial.begin(115200);
       Wire.begin();
-      Serial.println("Power System Initialized");
+      Serial.println("Power System Starting");
       currentState=SystemState::MEASURING;
     }
-
-  void run(){
-    switch (currentState){
-      case SystemState::INITIALIZING:
-        break;
-
-      case SystemState::MEASURING:
-        performMeasure();
-        break;
-      
-      case SystemState::TELEMETRY:
-        sendData();
-        break;
-      
-      case SystemState::SAFE_MODE:
-        enterSafeMode();
-        break;
-
-      case SystemState::GOTO_SLEEP:
-        enterDeepSleep();
-        break;
-    }  
-  }
-
-private:
-  void performMeasure(){
-    float voltage=sensor->getVoltage();
-    Serial.print("voltage: ");
-    Serial.print(voltage);
-    Serial.println(" V");
-
-    if (voltage < 3.3){
-      currentState=SystemState::SAFE_MODE;
-    }else{
-      currentState=SystemState::TELEMETRY;
+  
+    void run(){
+      switch(currentState){
+        case SystemState::INITIALIZING:
+          break;
+        case SystemState::MEASURING:
+          performMeasure();
+          break;
+        case SystemState::TELEMETRY:
+          sendData();
+          break;
+        case SystemState::SAFE_MODE:
+          enterSafeMode();
+          break;
+        case SystemState::GOTO_SLEEP:
+          enterDeepSleep();
+          break;
+      }
     }
-  }
+  private:
+    void performMeasure(){
+      float voltage=sensor->getVoltage();
+      Serial.print("voltage:");
+      Serial.print(voltage);
+      Serial.println(" V");
 
-  void sendData(){
-    Serial.println("Sending telemetry data...");
-    currentState=SystemState::GOTO_SLEEP;
-  }
-
-  void enterSafeMode(){
-    Serial.println("Low battery-entering safe mode");
-    currentState=SystemState::GOTO_SLEEP;
-  }
-
-  void enterDeepSleep(){
-    Serial.println("Entering deep sleep");
-    Serial.flush();
-    esp_sleep_enable_timer_wakeup(5*1000000);
-    esp_deep_sleep_start();
-  }
+      if (voltage<3.3){
+        currentState=SystemState::SAFE_MODE;
+      }else{
+        currentState=SystemState::TELEMETRY;
+      }
+    }
+    
+    void sendData(){
+      Serial.println("Sending telemetry data");
+      currentState=SystemState::MEASURING;
+    }
+    void enterSafeMode(){
+      Serial.println("Entering Safe Mode");
+      currentState=SystemState::GOTO_SLEEP;
+    }
+    void enterDeepSleep(){
+      Serial.println("Entering Deep Sleep");
+      Serial.flush();
+      esp_sleep_enable_timer_wakeup(5*1000000);
+      esp_deep_sleep_start();
+    }
 };
 
 MockSensor dummySensor;
-
 PowerSystem eps(&dummySensor);
 
 void setup(){
   eps.begin();
 }
 
-void loop (){
+void loop(){
   eps.run();
   delay(50);
 }
