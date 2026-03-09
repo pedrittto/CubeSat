@@ -2,6 +2,7 @@
 #include "comms/Telemetry.h"
 #include <Arduino.h>
 
+
 PowerSystem::PowerSystem(IVoltageSensor*s):
     currentState(SystemState::INITIALIZING),sensor(s),lastVoltage(0.0f){}
 
@@ -70,4 +71,4 @@ void PowerSystem::enterDeepSleep(){
     
     esp_sleep_enable_timer_wakeup(5*1000000);
     esp_deep_sleep_start();
-}    
+}      
